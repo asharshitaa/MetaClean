@@ -1,0 +1,135 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Photo Privacy Meter</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; }
+    #meter { height: 30px; width: 100%; background: #eee; border-radius: 8px; overflow: hidden; }
+    #fill { height: 100%; width: 0%; background: #4caf50; transition: width 400ms; text-align: center; color: white; }
+    .danger { background: #e53935 !important; }
+    .warn { background: #ffa726 !important; }
+  </style>
+</head>
+<body>
+  <h2>Photo Privacy Meter</h2>
+  <input id="imageInput" type="file" accept="image/*">
+  <button id="uploadBtn">Analyze</button>
+
+  <div style="margin-top:16px;">
+    <div id="meter"><div id="fill">0%</div></div>
+  </div>
+
+  <div id="results" style="margin-top:12px;"></div>
+
+<script>
+const uploadBtn = document.getElementById('uploadBtn');
+const imageInput = document.getElementById('imageInput');
+const fill = document.getElementById('fill');
+const results = document.getElementById('results');
+
+uploadBtn.onclick = async () => {
+  if (!imageInput.files || imageInput.files.length === 0) { alert('Choose an image'); return; }
+  const f = imageInput.files[0];
+  const fd = new FormData();
+  fd.append('image', f);
+  let j;
+  try {
+    const res = await fetch('/analyze', { method: 'POST', body: fd });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Server error (${res.status}): ${text || 'no details'}`);
+    }
+    j = await res.json();
+  } catch (err) {
+    results.innerText = 'Error: ' + (err.message || err);
+    fill.style.width = '0%';
+    fill.textContent = '0%';
+    fill.classList.remove('danger','warn');
+    return;
+  }
+  if (j.error) {
+    results.innerText = 'Error: ' + (j.detail || j.error);
+    fill.style.width = '0%';
+    fill.textContent = '0%';
+    fill.classList.remove('danger','warn');
+    return;
+  }
+  const score = j.score;
+  fill.style.width = score + '%';
+  fill.textContent = score + '%';
+  fill.classList.remove('danger','warn');
+  if (score < 35) fill.classList.add('danger');
+  else if (score < 65) fill.classList.add('warn');
+
+  // show reasons
+  let html = `<h3>Breakdown</h3>`;
+  html += `<p>Risk level: <strong>${(j.risk_level || 'unknown').toUpperCase()}</strong></p>`;
+  if (typeof j.safe_to_share === 'boolean') {
+    html += `<p>Safe to share? <strong>${j.safe_to_share ? 'Likely yes' : 'Review before sharing'}</strong></p>`;
+  }
+  html += `<p>Image: ${j.width}×${j.height} (${j.megapixels.toFixed(2)} MP)</p>`;
+
+  if (j.component_penalties) {
+    html += `<h4>Score components</h4>`;
+    html += `<ul>`;
+    Object.entries(j.component_penalties).forEach(([name, data]) => {
+      const label = name.charAt(0).toUpperCase() + name.slice(1);
+      const penalty = (data && data.penalty) ? data.penalty : 0;
+      html += `<li><strong>${label}</strong>: −${penalty} points`;
+      if (data && Array.isArray(data.issues) && data.issues.length) {
+        html += `<ul>`;
+        data.issues.forEach(issue => { html += `<li>${issue}</li>`; });
+        html += `</ul>`;
+      }
+      html += `</li>`;
+    });
+    html += `</ul>`;
+  }
+
+  html += `<ul>`;
+  j.reasons.forEach(r => html += `<li>${r}</li>`);
+  html += `</ul>`;
+
+  if (j.license_plate_regions && j.license_plate_regions.length) {
+    html += `<h4>License plate detections</h4><ul>`;
+    const classifications = j.ocr && Array.isArray(j.ocr.plate_classifications) ? j.ocr.plate_classifications : [];
+    j.license_plate_regions.forEach((reg, idx) => {
+      const aspect = typeof reg.aspect === 'number' ? reg.aspect.toFixed(2) : (reg.aspect || 'n/a');
+      const classification = classifications[idx] || 'unknown';
+      html += `<li>Region ${idx + 1}: box (${reg.x}, ${reg.y}, ${reg.w}, ${reg.h}), aspect ${aspect}, classified as ${classification}</li>`;
+    });
+    if (j.ocr && j.ocr.plate_roi_texts) {
+      j.ocr.plate_roi_texts.forEach((roi, idx) => {
+        if (roi.texts && roi.texts.length) {
+          html += `<li>ROI ${idx + 1} text: ${roi.texts.join(', ')}</li>`;
+        }
+      });
+    }
+    html += `</ul>`;
+  }
+
+  if (j.documents && j.documents.length) {
+    html += `<h4>Document detections</h4><ul>`;
+    j.documents.forEach((doc, idx) => {
+      const snippet = doc.meta && doc.meta.snippet && doc.meta.snippet.length ? doc.meta.snippet.slice(0, 2).join(', ') : 'no text captured';
+      const areaPct = typeof doc.area_ratio === 'number' ? (doc.area_ratio * 100).toFixed(1) : 'n/a';
+      const aspect = typeof doc.aspect === 'number' ? doc.aspect.toFixed(2) : 'n/a';
+      html += `<li>Document ${idx + 1}: type ${doc.type}, area ${areaPct}%, aspect ${aspect}<br/>Sample text: ${snippet}</li>`;
+    });
+    html += `</ul>`;
+  }
+
+  if (j.recommendations && j.recommendations.length) {
+    html += `<h4>Recommendations</h4><ul>`;
+    j.recommendations.forEach(rec => html += `<li>${rec}</li>`);
+    html += `</ul>`;
+  }
+
+  html += `<p>Sanitized image (EXIF removed): <a href="/download/sanitized/${f.name}" target="_blank">open</a></p>`;
+  html += `<p>Face-blurred example: <a href="/download/blurred/${f.name}" target="_blank">open</a></p>`;
+  results.innerHTML = html;
+};
+</script>
+</body>
+</html>
