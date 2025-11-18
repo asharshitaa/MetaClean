@@ -1,6 +1,7 @@
 import os
 import sys
 import threading
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple, Optional
@@ -20,8 +21,9 @@ if str(ROOT_DIR) not in sys.path:
 from modules.blur import blur_images
 from modules.metadata import clean_metadata
 from modules.compress import compress_and_package
-from meta.modules.metadata_tools import read_exif, compute_privacy_score, remove_exif
+from meta.modules.metadata_tools import read_exif, remove_exif
 from blurring.modules.blur_tools import detect_faces, detect_plates, _blur_regions, _blur_text_regions, _tesseract_available
+from privacy_score.privacy_score import analyze_image_bytes
 
 # Output directory
 OUTPUT_ROOT = ROOT_DIR / "outputs"
@@ -47,11 +49,14 @@ class App(tk.Tk):
         self.processed_images: List[str] = []  # Store processed image paths
         self.temp_work_dir = OUTPUT_ROOT / "temp_work"
         self.temp_work_dir.mkdir(exist_ok=True, parents=True)
+        self.privacy_meter_cache = {}
+        self.current_displayed_image_path: Optional[str] = None
 
         self.show_home_page()
 
     def show_home_page(self):
         """Initial home page with Get Started button"""
+        self.current_displayed_image_path = None
         for widget in self.winfo_children():
             widget.destroy()
 
@@ -129,6 +134,7 @@ class App(tk.Tk):
 
     def show_upload_page(self):
         """Media upload page with browse file button"""
+        self.current_displayed_image_path = None
         for widget in self.winfo_children():
             widget.destroy()
 
@@ -216,6 +222,7 @@ class App(tk.Tk):
             filetypes=[("Images", "*.jpg *.jpeg *.png *.bmp *.tiff *.webp"), ("All files", "*.*")]
         )
         if files:
+            self.invalidate_privacy_cache()
             self.selected_files = list(files)
             self.file_listbox.delete(0, tk.END)
             for path in self.selected_files:
@@ -243,6 +250,7 @@ class App(tk.Tk):
 
         current_image_path = self.selected_files[self.current_image_index]
         total_images = len(self.selected_files)
+        self.current_displayed_image_path = current_image_path
 
         # Main frame
         main_frame = tk.Frame(self, bg="#f5f5f5")
@@ -261,9 +269,30 @@ class App(tk.Tk):
         content_frame = tk.Frame(main_frame, bg="#f5f5f5")
         content_frame.pack(fill="both", expand=True, padx=20, pady=20)
 
-        # Left side - Image preview
+        # Left side - Image preview + meter (scrollable)
         image_frame = tk.Frame(content_frame, bg="white", relief="sunken", bd=2)
         image_frame.pack(side="left", fill="both", expand=True, padx=(0, 20))
+
+        image_canvas = tk.Canvas(image_frame, bg="white", highlightthickness=0)
+        image_canvas.pack(side="left", fill="both", expand=True)
+
+        image_scrollbar = tk.Scrollbar(image_frame, orient="vertical", command=image_canvas.yview)
+        image_scrollbar.pack(side="right", fill="y")
+        image_canvas.configure(yscrollcommand=image_scrollbar.set)
+
+        image_inner = tk.Frame(image_canvas, bg="white")
+        image_canvas.create_window((0, 0), window=image_inner, anchor="nw")
+
+        def _update_scroll_region(event):
+            image_canvas.configure(scrollregion=image_canvas.bbox("all"))
+
+        image_inner.bind("<Configure>", _update_scroll_region)
+
+        def _on_mousewheel(event):
+            image_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        image_canvas.bind("<Enter>", lambda e: image_canvas.bind_all("<MouseWheel>", _on_mousewheel))
+        image_canvas.bind("<Leave>", lambda e: image_canvas.unbind_all("<MouseWheel>"))
 
         try:
             img = Image.open(current_image_path)
@@ -274,11 +303,14 @@ class App(tk.Tk):
             img.thumbnail((max_width, max_height), Image.LANCZOS)
             photo = ImageTk.PhotoImage(img)
             
-            image_label = tk.Label(image_frame, image=photo, bg="white")
+            image_label = tk.Label(image_inner, image=photo, bg="white")
             image_label.image = photo  # Keep reference
             image_label.pack(padx=10, pady=10)
+            meter_container = tk.Frame(image_inner, bg="white")
+            meter_container.pack(fill="x", padx=20, pady=(0, 20))
+            self.render_privacy_meter(meter_container, current_image_path)
         except Exception as e:
-            error_label = tk.Label(image_frame, text=f"Error loading image:\n{e}", fg="red", font=("Arial", 12))
+            error_label = tk.Label(image_inner, text=f"Error loading image:\n{e}", fg="red", font=("Arial", 12), bg="white")
             error_label.pack(padx=10, pady=10)
 
         # Right side - Menu
@@ -298,7 +330,7 @@ class App(tk.Tk):
         buttons = [
             ("1. Preview Metadata", self.preview_metadata),
             ("2. Remove All Metadata", self.remove_all_metadata),
-            ("3. Blur Faces and Text", self.blur_faces_interactive),
+            ("3. Detect & Blur Faces/Plates/Text", self.blur_faces_interactive),
             ("4. View Privacy Score", self.view_privacy_score),
             ("5. Rename", self.rename_image),
             ("6. Done", self.image_done)
@@ -367,6 +399,7 @@ class App(tk.Tk):
             remove_exif(current_image_path, str(output_path))
             
             # Update the current image to the cleaned version
+            self.invalidate_privacy_cache(current_image_path)
             self.selected_files[self.current_image_index] = str(output_path)
             
             messagebox.showinfo("Success", "Metadata removed successfully!")
@@ -401,6 +434,7 @@ class App(tk.Tk):
                 # Save blurred image
                 output_path = self.temp_work_dir / f"blurred_{Path(current_image_path).name}"
                 cv2.imwrite(str(output_path), image)
+                self.invalidate_privacy_cache(current_image_path)
                 self.selected_files[self.current_image_index] = str(output_path)
                 self.show_metadata_cleaning_page()
                 return
@@ -504,6 +538,7 @@ class App(tk.Tk):
                     # Save blurred image
                     output_path = self.temp_work_dir / f"blurred_{Path(current_image_path).name}"
                     cv2.imwrite(str(output_path), work_image)
+                    self.invalidate_privacy_cache(current_image_path)
                     self.selected_files[self.current_image_index] = str(output_path)
 
                     preview_window.destroy()
@@ -529,31 +564,157 @@ class App(tk.Tk):
         current_image_path = self.selected_files[self.current_image_index]
         
         try:
-            exif = read_exif(current_image_path)
-            score, details = compute_privacy_score(exif)
-            
+            analysis = self.get_privacy_analysis(current_image_path, force_refresh=True)
+            if analysis.get("error"):
+                raise ValueError(analysis["error"])
+            score = analysis.get("score", "N/A")
+            risk = analysis.get("risk_level", "unknown").title()
+            safe = "Yes" if analysis.get("safe_to_share") else "No"
+            reasons = analysis.get("reasons", [])
+            recommendations = analysis.get("recommendations", [])
+
             score_window = tk.Toplevel(self)
             score_window.title("Privacy Score")
-            score_window.geometry("500x300")
+            score_window.geometry("650x500")
             
-            text_area = scrolledtext.ScrolledText(score_window, wrap=tk.WORD, width=60, height=15)
+            text_area = scrolledtext.ScrolledText(score_window, wrap=tk.WORD, width=70, height=22)
             text_area.pack(fill="both", expand=True, padx=10, pady=10)
             
             text_area.insert(tk.END, f"File: {Path(current_image_path).name}\n")
             text_area.insert(tk.END, "="*50 + "\n\n")
             text_area.insert(tk.END, f"Privacy Score: {score}/100\n")
-            text_area.insert(tk.END, f"(Higher = more private)\n\n")
+            text_area.insert(tk.END, f"Risk Level: {risk}\n")
+            text_area.insert(tk.END, f"Safe To Share Now? {safe}\n\n")
             
-            if details.get("found_fields"):
-                text_area.insert(tk.END, f"Sensitive fields found:\n")
-                for field in details['found_fields']:
-                    text_area.insert(tk.END, f"  - {field}\n")
+            if reasons:
+                text_area.insert(tk.END, "Why the score looks this way:\n")
+                for reason in reasons:
+                    text_area.insert(tk.END, f"  - {reason}\n")
+                text_area.insert(tk.END, "\n")
+            
+            if recommendations:
+                text_area.insert(tk.END, "Suggested fixes:\n")
+                for rec in recommendations:
+                    text_area.insert(tk.END, f"  - {rec}\n")
             else:
-                text_area.insert(tk.END, "No sensitive metadata detected.\n")
+                text_area.insert(tk.END, "No further privacy risks detected.\n")
             
             text_area.config(state="disabled")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to compute privacy score:\n{e}")
+
+    def render_privacy_meter(self, parent: tk.Frame, image_path: str):
+        """Create and populate the privacy meter panel under the image."""
+        for widget in parent.winfo_children():
+            widget.destroy()
+
+        title = tk.Label(parent, text="Privacy Meter", font=("Arial", 18, "bold"), bg="white")
+        title.pack(anchor="w")
+
+        status_label = tk.Label(parent, text="Calculating...", font=("Arial", 14), bg="white", fg="#555555")
+        status_label.pack(anchor="w", pady=(5, 0))
+
+        canvas = tk.Canvas(parent, width=420, height=35, bg="white", highlightthickness=0)
+        canvas.pack(pady=10)
+
+        info_label = tk.Label(parent, text="Analyzing the latest edits...", font=("Arial", 12), bg="white", fg="#777777", wraplength=420, justify="left")
+        info_label.pack(anchor="w")
+
+        parent.status_label = status_label  # type: ignore[attr-defined]
+        parent.canvas = canvas  # type: ignore[attr-defined]
+        parent.info_label = info_label  # type: ignore[attr-defined]
+        parent.current_image_path = image_path  # type: ignore[attr-defined]
+
+        def worker():
+            analysis = self.get_privacy_analysis(image_path)
+            self.after(0, lambda: self.populate_privacy_meter(parent, analysis, image_path))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def populate_privacy_meter(self, parent: tk.Frame, analysis: dict, image_path: str):
+        """Update the meter UI with calculated analysis."""
+        if getattr(parent, "current_image_path", None) != image_path:
+            return
+        if self.current_displayed_image_path != image_path:
+            return
+
+        status_label: tk.Label = getattr(parent, "status_label", None)
+        info_label: tk.Label = getattr(parent, "info_label", None)
+        canvas: tk.Canvas = getattr(parent, "canvas", None)
+
+        if analysis.get("error"):
+            if status_label:
+                status_label.config(text="Unable to compute privacy score", fg="#c62828")
+            if info_label:
+                info_label.config(text=str(analysis["error"]), fg="#c62828")
+            if canvas:
+                canvas.delete("all")
+            return
+
+        try:
+            score = int(analysis.get("score", 0))
+        except (TypeError, ValueError):
+            score = 0
+        risk = analysis.get("risk_level", "unknown").title()
+        safe_flag = analysis.get("safe_to_share")
+        descriptor = "Safe to share now" if safe_flag else "Needs more cleaning"
+
+        if status_label:
+            status_label.config(text=f"{score}/100 • {risk} risk", fg="#1b5e20" if safe_flag else "#e65100")
+
+        if canvas:
+            self.draw_privacy_meter_bar(canvas, score)
+
+        reasons = analysis.get("reasons", [])
+        if info_label:
+            if reasons:
+                info_label.config(
+                    text=f"{descriptor}. Example issue: {reasons[0]}",
+                    fg="#1b5e20" if safe_flag else "#e65100"
+                )
+            else:
+                info_label.config(text=descriptor, fg="#1b5e20" if safe_flag else "#e65100")
+
+    def draw_privacy_meter_bar(self, canvas: tk.Canvas, score: int):
+        """Draw gradient bar with current score overlay."""
+        canvas.delete("all")
+        bar_height = 20
+        bar_width = 400
+        x0 = 10
+        y0 = 5
+        for i in range(bar_width):
+            ratio = i / bar_width
+            red = int(255 * (1 - ratio))
+            green = int(255 * ratio)
+            color = f"#{red:02x}{green:02x}20"
+            canvas.create_line(x0 + i, y0, x0 + i, y0 + bar_height, fill=color)
+
+        fill_width = max(0, min(bar_width, int(bar_width * (score / 100))))
+        if fill_width < bar_width:
+            canvas.create_rectangle(x0 + fill_width, y0, x0 + bar_width, y0 + bar_height, fill="#f5f5f5", outline="")
+
+        canvas.create_rectangle(x0, y0, x0 + bar_width, y0 + bar_height, outline="#424242", width=2)
+        canvas.create_line(x0 + fill_width, y0, x0 + fill_width, y0 + bar_height, fill="#212121", width=2)
+
+    def get_privacy_analysis(self, image_path: str, force_refresh: bool = False) -> dict:
+        """Return cached privacy analysis or compute a new one."""
+        if not force_refresh and image_path in self.privacy_meter_cache:
+            return self.privacy_meter_cache[image_path]
+        try:
+            with open(image_path, "rb") as file:
+                data = file.read()
+            analysis = analyze_image_bytes(data, Path(image_path).name)
+            self.privacy_meter_cache[image_path] = analysis
+            return analysis
+        except Exception as exc:
+            return {"error": str(exc)}
+
+    def invalidate_privacy_cache(self, image_path: Optional[str] = None):
+        """Remove cached privacy analysis entries."""
+        if image_path:
+            self.privacy_meter_cache.pop(image_path, None)
+        else:
+            self.privacy_meter_cache.clear()
 
     def rename_image(self):
         """Option 5: Rename image"""
@@ -574,6 +735,7 @@ class App(tk.Tk):
                     counter += 1
                 
                 os.rename(current_image_path, str(new_path))
+                self.invalidate_privacy_cache(current_image_path)
                 self.selected_files[self.current_image_index] = str(new_path)
                 
                 messagebox.showinfo("Success", f"Image renamed to {new_path.name}")
@@ -592,6 +754,7 @@ class App(tk.Tk):
 
     def show_download_page(self):
         """Final download page after all images processed"""
+        self.current_displayed_image_path = None
         for widget in self.winfo_children():
             widget.destroy()
 
@@ -650,9 +813,30 @@ class App(tk.Tk):
             fg="white",
             padx=30,
             pady=10,
-            command=self.show_home_page
+            command=self.reset_to_home
         )
         canvas.create_window(self.screen_width // 2, 550, anchor="center", window=home_btn)
+
+    def reset_to_home(self):
+        """Reset selections and return to home screen."""
+        self.selected_files = []
+        self.processed_images = []
+        self.current_image_index = 0
+        self.current_displayed_image_path = None
+        self.invalidate_privacy_cache()
+        self.cleanup_temp_workspace()
+        self.show_home_page()
+
+    def cleanup_temp_workspace(self):
+        """Clear temporary working directory."""
+        try:
+            for item in self.temp_work_dir.iterdir():
+                if item.is_file():
+                    item.unlink()
+                elif item.is_dir():
+                    shutil.rmtree(item)
+        except Exception:
+            pass
 
     def download_individual(self):
         """Open folder with individual processed images"""
@@ -667,7 +851,6 @@ class App(tk.Tk):
             final_dir.mkdir(parents=True, exist_ok=True)
             
             for img_path in self.processed_images:
-                import shutil
                 shutil.copy2(img_path, final_dir / Path(img_path).name)
             
             os.startfile(final_dir)  # type: ignore
@@ -687,7 +870,6 @@ class App(tk.Tk):
             package_dir.mkdir(parents=True, exist_ok=True)
             
             # Copy images to package directory
-            import shutil
             for img_path in self.processed_images:
                 shutil.copy2(img_path, package_dir / Path(img_path).name)
             
