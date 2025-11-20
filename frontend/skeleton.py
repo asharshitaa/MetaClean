@@ -20,10 +20,10 @@ if str(ROOT_DIR) not in sys.path:
 # Import backend modules
 from modules.blur import blur_images
 from modules.metadata import clean_metadata
-from modules.compress import compress_and_package
+from modules.compress import comp_pack
 from meta.modules.metadata_tools import read_exif, remove_exif
-from blurring.modules.blur_tools import detect_faces, detect_plates, _blur_regions, _blur_text_regions, _tesseract_available
-from privacy_score.privacy_score import analyze_image_bytes
+from blurring.modules.blur_tools import face_detect, plates_detect, apply_blur, text_blur, tesserect_ready
+from privacy_score.privacy_score import image_analy
 
 # Output directory
 OUTPUT_ROOT = ROOT_DIR / "outputs"
@@ -626,13 +626,13 @@ class App(tk.Tk):
                 return
 
             # Detect faces and plates
-            faces = detect_faces(image)
-            plates = detect_plates(image)
+            faces = face_detect(image)
+            plates = plates_detect(image)
 
             if not faces and not plates:
                 # Auto blur text if no faces/plates
-                if _tesseract_available():
-                    text_count = _blur_text_regions(image)
+                if tesserect_ready():
+                    text_count = text_blur(image)
                     messagebox.showinfo("Blur Complete", f"Blurred {text_count} text regions.")
                 else:
                     messagebox.showinfo("No Detections", "No faces or license plates detected.")
@@ -750,8 +750,8 @@ class App(tk.Tk):
 
                     # Blur text if Tesseract available
                     text_count = 0
-                    if _tesseract_available():
-                        text_count = _blur_text_regions(work_image)
+                    if tesserect_ready():
+                        text_count = text_blur(work_image)
 
                     # Save blurred image
                     output_path = self.temp_work_dir / f"blurred_{Path(current_image_path).name}"
@@ -944,7 +944,7 @@ class App(tk.Tk):
         try:
             with open(image_path, "rb") as file:
                 data = file.read()
-            analysis = analyze_image_bytes(data, Path(image_path).name)
+            analysis = image_analy(data, Path(image_path).name)
             self.privacy_meter_cache[image_path] = analysis
             return analysis
         except Exception as exc:
@@ -1117,12 +1117,12 @@ class App(tk.Tk):
                 shutil.copy2(img_path, package_dir / Path(img_path).name)
             
             # Compress and create ZIP
-            result = compress_and_package(
+            result = comp_pack(
                 [str(package_dir / Path(p).name) for p in self.processed_images],
                 package_dir
             )
             
-            zip_path = Path(result["zip_path"]) if result.get("zip_path") else None
+            zip_path = Path(result["zpath"]) if result.get("zpath") else None
             
             if zip_path and zip_path.exists():
                 os.startfile(zip_path.parent)  # type: ignore

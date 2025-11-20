@@ -1,28 +1,25 @@
 from pathlib import Path
 from typing import Iterable, List, Optional
 
-from blurring.modules.blur_tools import blur_faces_and_text
+from blurring.modules.blur_tools import batch_blur
 
 
 def blur_images(
-    image_paths: Iterable[str | Path],
-    output_dir: str | Path,
+    ipaths: Iterable[str | Path],
+    outdir: str | Path,
     *,
-    auto: bool = True,
-    blur_text: bool = True,
-    progress_cb=None,
+    auto: bool= True,
+    tblur: bool= True,
+    procb=None,
 ) -> List[str]:
-    """
-    Wrapper around the blurring pipeline that normalises parameters for the GUI.
-    """
-    path_list = [Path(p) for p in image_paths]
-    if not path_list:
+    plist= [Path(p) for p in ipaths]
+    if not plist:
         return []
-    return blur_faces_and_text(
-        path_list,
-        Path(output_dir),
+    return face_text(
+        plist,
+        Path(outdir),
         auto=auto,
-        blur_text=blur_text,
-        progress_cb=progress_cb,
+        tblur=tblur,
+        procb=procb,
     )
 

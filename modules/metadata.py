@@ -3,21 +3,18 @@ from typing import Iterable, List
 
 from meta.modules.metadata_tools import clean_metadata_batch
 
-
 def clean_metadata(
-    image_paths: Iterable[str | Path],
-    output_dir: str | Path,
+    ipaths: Iterable[str | Path],
+    outdir: str | Path,
     *,
-    progress_cb=None,
+    procb=None,
 ) -> List[str]:
-    """
-    Runs metadata removal on a group of images and returns paths to cleaned files.
-    """
-    results = clean_metadata_batch(
-        [str(Path(p)) for p in image_paths],
-        Path(output_dir),
-        progress_cb=progress_cb,
+    
+    results= clean_metadata_batch(
+        [str(Path(p)) for p in ipaths],
+        Path(outdir),
+        procb=procb,
     )
-    cleaned = [item["output"] for item in results if item.get("output")]
-    return [str(Path(path)) for path in cleaned]
+    clean= [item["output"] for item in results if item.get("output")]
+    return [str(Path(path)) for path in clean]
 
