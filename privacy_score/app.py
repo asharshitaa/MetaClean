@@ -22,7 +22,7 @@ def image_analy():
     file= request.files['image']
     raw= file.read()
     try:
-        result= analyze_image_bytes(raw, filename_hint=file.filename)
+        result= image_analy(raw, filename_hint=file.filename)
     except Exception as e:
         return jsonify({'error': 'analysis failed', 'detail': str(e)}), 500
 
@@ -33,7 +33,7 @@ def image_analy():
         f.write(sani)
 
     #face blur
-    blur= blur_faces_in_bytes(raw)
+    blur= faceblur_byte(raw)
     bpath= os.path.join(app.config['UPLOAD_FOLDER'], f"blurred_{file.filename}")
     with open(bpath, 'wb') as f:
         f.write(blur)

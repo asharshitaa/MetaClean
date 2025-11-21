@@ -12,12 +12,10 @@ from PIL import Image, ImageTk, ImageDraw, ImageFont
 import cv2
 import numpy as np
 
-# Add project root to path
 ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-# Import backend modules
 from modules.blur import blur_images
 from modules.metadata import clean_metadata
 from modules.compress import comp_pack
@@ -25,14 +23,11 @@ from meta.modules.metadata_tools import read_exif, remove_exif
 from blurring.modules.blur_tools import face_detect, plates_detect, apply_blur, text_blur, tesserect_ready
 from privacy_score.privacy_score import image_analy
 
-# Output directory
 OUTPUT_ROOT = ROOT_DIR / "outputs"
 OUTPUT_ROOT.mkdir(exist_ok=True, parents=True)
 
-# Frontend directory for images
 FRONTEND_DIR = Path(__file__).resolve().parent
 
-# Global palette (soft dark theme)
 PRIMARY_BG = "#B7E5CD"
 SURFACE_BG = "#ffffff"
 CARD_BG = "#ffffff"
@@ -57,10 +52,9 @@ class App(tk.Tk):
         self.screen_width = self.winfo_screenwidth()
         self.screen_height = self.winfo_screenheight()
 
-        # State management
         self.selected_files: List[str] = []
         self.current_image_index = 0
-        self.processed_images: List[str] = []  # Store processed image paths
+        self.processed_images: List[str] = []
         self.temp_work_dir = OUTPUT_ROOT / "temp_work"
         self.temp_work_dir.mkdir(exist_ok=True, parents=True)
         self.privacy_meter_cache = {}
@@ -70,7 +64,6 @@ class App(tk.Tk):
 
     @staticmethod
     def _adjust_hex_color(color: str, factor: float) -> str:
-        """Lighten or darken a hex color by factor (-1.0 to 1.0)."""
         color = color.lstrip("#")
         if len(color) != 6:
             return "#"+color
@@ -96,7 +89,6 @@ class App(tk.Tk):
         text_color: str = TEXT_LIGHT,
         font=("Arial", 14, "bold")
     ) -> tk.Canvas:
-        """Return a rounded button rendered on a small canvas."""
         parent_bg = parent.cget("bg") if hasattr(parent, "cget") else PRIMARY_BG
         canvas = tk.Canvas(parent, width=width, height=height, bg=parent_bg, highlightthickness=0)
 
@@ -138,7 +130,6 @@ class App(tk.Tk):
         return canvas
 
     def create_modal_window(self, title: str, geometry: str = "720x520"):
-        """Create a styled modal window with consistent aesthetics."""
         window = tk.Toplevel(self)
         window.title(title)
         window.geometry(geometry)
@@ -176,7 +167,6 @@ class App(tk.Tk):
         return window, body
 
     def show_home_page(self):
-        """Initial home page with Get Started button"""
         self.current_displayed_image_path = None
         for widget in self.winfo_children():
             widget.destroy()
@@ -218,7 +208,6 @@ class App(tk.Tk):
         )
         canvas.create_window(self.screen_width // 2, self.screen_height // 2 - 50, anchor="center", window=subtitle)
 
-        # Get Started button (rounded)
         getstarted_btn = self.create_rounded_button(
             canvas,
             "Get Started",
@@ -236,7 +225,6 @@ class App(tk.Tk):
             window=getstarted_btn
         )
 
-        # Close button (X)
         close_button = self.create_rounded_button(
             canvas,
             "×",
@@ -251,12 +239,10 @@ class App(tk.Tk):
         canvas.create_window(self.screen_width - 80, 80, anchor="ne", window=close_button)
 
     def show_upload_page(self):
-        """Media upload page with browse file button"""
         self.current_displayed_image_path = None
         for widget in self.winfo_children():
             widget.destroy()
 
-        # Background
         canvas = tk.Canvas(
             self,
             width=self.screen_width,
@@ -271,7 +257,6 @@ class App(tk.Tk):
             self.bg2_photo = ImageTk.PhotoImage(bg2_image)
             canvas.create_image(0, 0, image=self.bg2_photo, anchor="nw")
 
-        # Rounded Browse Files button helper
         def draw_rounded_button(command):
             canvas_bg = PRIMARY_BG
             holder = tk.Canvas(self, width=240, height=80, bg=canvas_bg, highlightthickness=0)
@@ -307,7 +292,6 @@ class App(tk.Tk):
         browse_btn_canvas = draw_rounded_button(self.browse_files)
         canvas.create_window(self.screen_width // 2, 360, anchor="center", window=browse_btn_canvas)
 
-        # File list display
         listbox_frame = tk.Frame(self, bg=PRIMARY_BG, bd=2, relief="solid")
         self.file_listbox = tk.Listbox(
             listbox_frame,
@@ -323,7 +307,6 @@ class App(tk.Tk):
         )
         self.file_listbox.pack(padx=12, pady=12)
 
-        # Cancel and Next buttons
         cancel_btn = self.create_rounded_button(
             canvas,
             "Cancel",
@@ -349,7 +332,6 @@ class App(tk.Tk):
         canvas.create_window(self.screen_width - 320, button_y, anchor="nw", window=cancel_btn)
         canvas.create_window(self.screen_width - 150, button_y, anchor="nw", window=next_btn)
 
-        # Close button
         close_btn = self.create_rounded_button(
             canvas,
             "×",
@@ -364,7 +346,6 @@ class App(tk.Tk):
         canvas.create_window(self.screen_width - 80, 80, anchor="ne", window=close_btn)
 
     def browse_files(self):
-        """Browse and select image files"""
         files = filedialog.askopenfilenames(
             title="Select Images",
             filetypes=[("Images", "*.jpg *.jpeg *.png *.bmp *.tiff *.webp"), ("All files", "*.*")]
@@ -377,7 +358,6 @@ class App(tk.Tk):
                 self.file_listbox.insert(tk.END, Path(path).name)
 
     def go_to_metadata_page(self):
-        """Go to metadata cleaning page (first image)"""
         if not self.selected_files:
             messagebox.showinfo("No Images", "Please select at least one image first.")
             return
@@ -387,9 +367,7 @@ class App(tk.Tk):
         self.show_metadata_cleaning_page()
 
     def show_metadata_cleaning_page(self):
-        """Show metadata cleaning page for current image"""
         if self.current_image_index >= len(self.selected_files):
-            # All images processed, go to download page
             self.show_download_page()
             return
 
@@ -400,7 +378,6 @@ class App(tk.Tk):
         total_images = len(self.selected_files)
         self.current_displayed_image_path = current_image_path
 
-        # Background image for metadata page
         bg3_path = FRONTEND_DIR / "bg3.png"
         if bg3_path.exists():
             bg3_image = Image.open(bg3_path).resize((self.screen_width, self.screen_height), Image.LANCZOS)
@@ -411,11 +388,9 @@ class App(tk.Tk):
         else:
             self.configure(bg=PRIMARY_BG)
 
-        # Main frame
         main_frame = tk.Frame(self, bg=PRIMARY_BG)
         main_frame.pack(fill="both", expand=True)
 
-        # Top workflow actions bar (original layout)
         actions_frame = tk.Frame(main_frame, bg=PRIMARY_BG, relief="ridge", bd=2, highlightbackground=ACCENT_SLATE, highlightthickness=2)
         actions_frame.pack(fill="x", padx=20, pady=(80, 10))
 
@@ -499,7 +474,6 @@ class App(tk.Tk):
             btn_canvas = create_action_button(button_row, f"{idx}. {label}", command, fill_color=fill_color)
             btn_canvas.pack(side="left", expand=True, fill="x", padx=6, pady=5)
 
-        # Counter label (top left, now below workflow bar)
         counter_label = tk.Label(
             main_frame,
             text=f"Image {self.current_image_index + 1} of {total_images}",
@@ -509,11 +483,9 @@ class App(tk.Tk):
         )
         counter_label.pack(anchor="nw", padx=20, pady=20)
 
-        # Content frame (image on left, menu on right)
         content_frame = tk.Frame(main_frame, bg=PRIMARY_BG)
         content_frame.pack(fill="both", expand=True, padx=50, pady=20)
 
-        # Left side - Image preview + meter (scrollable)
         image_frame = tk.Frame(content_frame, bg=CARD_BG, relief="sunken", bd=2)
         image_frame.pack(side="left", fill="both", expand=True, padx=(0, 20))
 
@@ -540,7 +512,6 @@ class App(tk.Tk):
 
         try:
             img = Image.open(current_image_path)
-            # Resize to fit screen while maintaining aspect ratio
             max_width = self.screen_width // 2 - 100
             max_height = self.screen_height - 300
             
@@ -548,7 +519,7 @@ class App(tk.Tk):
             photo = ImageTk.PhotoImage(img)
             
             image_label = tk.Label(image_inner, image=photo, bg=CARD_BG)
-            image_label.image = photo  # Keep reference
+            image_label.image = photo
             image_label.pack(padx=50, pady=10)
             meter_container = tk.Frame(image_inner, bg=CARD_BG)
             meter_container.pack(fill="x", padx=50, pady=(0, 20))
@@ -557,7 +528,6 @@ class App(tk.Tk):
             error_label = tk.Label(image_inner, text=f"Error loading image:\n{e}", fg="red", font=("Arial", 12), bg=CARD_BG)
             error_label.pack(padx=50, pady=10)
 
-        # Back button (top right)
         back_btn = self.create_rounded_button(
             main_frame,
             "Back",
@@ -571,7 +541,6 @@ class App(tk.Tk):
         back_btn.place(x=self.screen_width - 170, y=20)
 
     def preview_metadata(self):
-        """Option 1: Preview metadata"""
         current_image_path = self.selected_files[self.current_image_index]
         
         metadata_window, body = self.create_modal_window("Image Metadata", "760x540")
@@ -596,48 +565,39 @@ class App(tk.Tk):
         text_area.config(state="disabled")
 
     def remove_all_metadata(self):
-        """Option 2: Remove all metadata"""
         current_image_path = self.selected_files[self.current_image_index]
         
         try:
-            # Save cleaned version to temp work directory
             output_path = self.temp_work_dir / f"cleaned_{Path(current_image_path).name}"
             remove_exif(current_image_path, str(output_path))
             
-            # Update the current image to the cleaned version
             self.invalidate_privacy_cache(current_image_path)
             self.selected_files[self.current_image_index] = str(output_path)
             
             messagebox.showinfo("Success", "Metadata removed successfully!")
-            # Refresh the image preview
             self.show_metadata_cleaning_page()
         except Exception as e:
             messagebox.showerror("Error", f"Failed to remove metadata:\n{e}")
 
     def blur_faces_interactive(self):
-        """Option 3: Interactive blur faces and plates"""
         current_image_path = self.selected_files[self.current_image_index]
         
         try:
-            # Load image
             image = cv2.imread(current_image_path)
             if image is None:
                 messagebox.showerror("Error", "Could not load image.")
                 return
 
-            # Detect faces and plates
             faces = face_detect(image)
             plates = plates_detect(image)
 
             if not faces and not plates:
-                # Auto blur text if no faces/plates
                 if tesserect_ready():
                     text_count = text_blur(image)
                     messagebox.showinfo("Blur Complete", f"Blurred {text_count} text regions.")
                 else:
                     messagebox.showinfo("No Detections", "No faces or license plates detected.")
                 
-                # Save blurred image
                 output_path = self.temp_work_dir / f"blurred_{Path(current_image_path).name}"
                 cv2.imwrite(str(output_path), image)
                 self.invalidate_privacy_cache(current_image_path)
@@ -645,30 +605,24 @@ class App(tk.Tk):
                 self.show_metadata_cleaning_page()
                 return
 
-            # Create preview image with numbered boxes (work on copy)
             display_img = image.copy()
             
-            # Draw faces with numbers
             for i, (x, y, w, h) in enumerate(faces):
                 cv2.rectangle(display_img, (x, y), (x + w, y + h), (0, 255, 255), 3)
                 cv2.putText(display_img, f"FACE {i}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
             
-            # Draw plates with numbers
             for i, (x, y, w, h) in enumerate(plates):
                 cv2.rectangle(display_img, (x, y), (x + w, y + h), (255, 0, 0), 3)
                 cv2.putText(display_img, f"PLATE {i}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
-            # Show preview window
             preview_window = tk.Toplevel(self)
             preview_window.title("Select Faces and Plates to Blur")
             preview_window.attributes('-fullscreen', True)
             preview_window.configure(bg=PRIMARY_BG)
             
-            # Convert to PIL for display
             display_rgb = cv2.cvtColor(display_img, cv2.COLOR_BGR2RGB)
             display_pil = Image.fromarray(display_rgb)
             
-            # Resize to fit screen
             screen_w = self.winfo_screenwidth()
             screen_h = self.winfo_screenheight()
             display_pil.thumbnail((screen_w - 100, screen_h - 200), Image.LANCZOS)
@@ -709,14 +663,12 @@ class App(tk.Tk):
 
             def apply_blur():
                 try:
-                    # Reload original image to work on fresh copy
                     work_image = cv2.imread(current_image_path)
                     if work_image is None:
                         messagebox.showerror("Error", "Could not reload image.")
                         preview_window.destroy()
                         return
 
-                    # Parse face selection
                     face_choice = face_entry.get().strip().lower()
                     if face_choice == "all":
                         faces_to_blur = list(range(len(faces)))
@@ -725,7 +677,6 @@ class App(tk.Tk):
                     else:
                         faces_to_blur = [int(i.strip()) for i in face_choice.split(",") if i.strip().isdigit()]
 
-                    # Parse plate selection
                     plate_choice = plate_entry.get().strip().lower()
                     if plate_choice == "all":
                         plates_to_blur = list(range(len(plates)))
@@ -734,26 +685,22 @@ class App(tk.Tk):
                     else:
                         plates_to_blur = [int(i.strip()) for i in plate_choice.split(",") if i.strip().isdigit()]
 
-                    # Apply blur to selected faces
                     for i, (x, y, w, h) in enumerate(faces):
                         if i in faces_to_blur:
                             roi = work_image[y:y+h, x:x+w]
                             if roi.size > 0:
                                 work_image[y:y+h, x:x+w] = cv2.GaussianBlur(roi, (99, 99), 30)
 
-                    # Apply blur to selected plates
                     for i, (x, y, w, h) in enumerate(plates):
                         if i in plates_to_blur:
                             roi = work_image[y:y+h, x:x+w]
                             if roi.size > 0:
                                 work_image[y:y+h, x:x+w] = cv2.GaussianBlur(roi, (99, 99), 30)
 
-                    # Blur text if Tesseract available
                     text_count = 0
                     if tesserect_ready():
                         text_count = text_blur(work_image)
 
-                    # Save blurred image
                     output_path = self.temp_work_dir / f"blurred_{Path(current_image_path).name}"
                     cv2.imwrite(str(output_path), work_image)
                     self.invalidate_privacy_cache(current_image_path)
@@ -794,7 +741,6 @@ class App(tk.Tk):
             messagebox.showerror("Error", f"Blurring failed:\n{e}")
 
     def view_privacy_score(self):
-        """Option 4: View privacy score"""
         current_image_path = self.selected_files[self.current_image_index]
         
         try:
@@ -837,7 +783,6 @@ class App(tk.Tk):
             messagebox.showerror("Error", f"Failed to compute privacy score:\n{e}")
 
     def render_privacy_meter(self, parent: tk.Frame, image_path: str):
-        """Create and populate the privacy meter panel under the image."""
         for widget in parent.winfo_children():
             widget.destroy()
 
@@ -861,10 +806,10 @@ class App(tk.Tk):
         )
         info_label.pack(anchor="w")
 
-        parent.status_label = status_label  # type: ignore[attr-defined]
-        parent.canvas = canvas  # type: ignore[attr-defined]
-        parent.info_label = info_label  # type: ignore[attr-defined]
-        parent.current_image_path = image_path  # type: ignore[attr-defined]
+        parent.status_label = status_label
+        parent.canvas = canvas
+        parent.info_label = info_label
+        parent.current_image_path = image_path
 
         def worker():
             analysis = self.get_privacy_analysis(image_path)
@@ -873,7 +818,6 @@ class App(tk.Tk):
         threading.Thread(target=worker, daemon=True).start()
 
     def populate_privacy_meter(self, parent: tk.Frame, analysis: dict, image_path: str):
-        """Update the meter UI with calculated analysis."""
         if getattr(parent, "current_image_path", None) != image_path:
             return
         if self.current_displayed_image_path != image_path:
@@ -917,7 +861,6 @@ class App(tk.Tk):
                 info_label.config(text=descriptor, fg="#1b5e20" if safe_flag else "#e65100")
 
     def draw_privacy_meter_bar(self, canvas: tk.Canvas, score: int):
-        """Draw gradient bar with current score overlay."""
         canvas.delete("all")
         bar_height = 20
         bar_width = 400
@@ -938,7 +881,6 @@ class App(tk.Tk):
         canvas.create_line(x0 + fill_width, y0, x0 + fill_width, y0 + bar_height, fill=TEXT_PRIMARY, width=2)
 
     def get_privacy_analysis(self, image_path: str, force_refresh: bool = False) -> dict:
-        """Return cached privacy analysis or compute a new one."""
         if not force_refresh and image_path in self.privacy_meter_cache:
             return self.privacy_meter_cache[image_path]
         try:
@@ -951,14 +893,12 @@ class App(tk.Tk):
             return {"error": str(exc)}
 
     def invalidate_privacy_cache(self, image_path: Optional[str] = None):
-        """Remove cached privacy analysis entries."""
         if image_path:
             self.privacy_meter_cache.pop(image_path, None)
         else:
             self.privacy_meter_cache.clear()
 
     def rename_image(self):
-        """Option 5: Rename image"""
         current_image_path = self.selected_files[self.current_image_index]
         current_name = Path(current_image_path).stem
         
@@ -969,7 +909,6 @@ class App(tk.Tk):
                 old_path = Path(current_image_path)
                 new_path = old_path.parent / f"{new_name}{old_path.suffix}"
                 
-                # Handle duplicates
                 counter = 1
                 while new_path.exists():
                     new_path = old_path.parent / f"{new_name}_{counter}{old_path.suffix}"
@@ -985,8 +924,6 @@ class App(tk.Tk):
                 messagebox.showerror("Error", f"Failed to rename:\n{e}")
 
     def image_done(self):
-        """Option 6: Done with current image, move to next"""
-        # Save current processed image
         current_image_path = self.selected_files[self.current_image_index]
         self.processed_images.append(current_image_path)
         
@@ -994,16 +931,13 @@ class App(tk.Tk):
         self.show_metadata_cleaning_page()
 
     def show_download_page(self):
-        """Final download page after all images processed"""
         self.current_displayed_image_path = None
         for widget in self.winfo_children():
             widget.destroy()
 
-        # Background
         canvas = tk.Canvas(self, width=self.screen_width, height=self.screen_height, bg=PRIMARY_BG, highlightthickness=0)
         canvas.pack(fill="both", expand=True)
 
-        # Title
         title_label = tk.Label(
             self,
             text="Processing Complete!",
@@ -1022,7 +956,6 @@ class App(tk.Tk):
         )
         canvas.create_window(self.screen_width // 2, 220, anchor="center", window=subtitle_label)
 
-        # Download buttons
         download_individual_btn = self.create_rounded_button(
             canvas,
             "Download Individual Images",
@@ -1047,7 +980,6 @@ class App(tk.Tk):
         )
         canvas.create_window(self.screen_width // 2, 450, anchor="center", window=download_compressed_btn)
 
-        # Back to home button
         home_btn = self.create_rounded_button(
             canvas,
             "Back to Home",
@@ -1061,7 +993,6 @@ class App(tk.Tk):
         canvas.create_window(self.screen_width // 2, 550, anchor="center", window=home_btn)
 
     def reset_to_home(self):
-        """Reset selections and return to home screen."""
         self.selected_files = []
         self.processed_images = []
         self.current_image_index = 0
@@ -1071,7 +1002,6 @@ class App(tk.Tk):
         self.show_home_page()
 
     def cleanup_temp_workspace(self):
-        """Clear temporary working directory."""
         try:
             for item in self.temp_work_dir.iterdir():
                 if item.is_file():
@@ -1082,13 +1012,11 @@ class App(tk.Tk):
             pass
 
     def download_individual(self):
-        """Open folder with individual processed images"""
         if not self.processed_images:
             messagebox.showinfo("No Images", "No processed images available.")
             return
         
         try:
-            # Copy all processed images to a final output folder
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             final_dir = OUTPUT_ROOT / "final" / timestamp
             final_dir.mkdir(parents=True, exist_ok=True)
@@ -1096,13 +1024,12 @@ class App(tk.Tk):
             for img_path in self.processed_images:
                 shutil.copy2(img_path, final_dir / Path(img_path).name)
             
-            os.startfile(final_dir)  # type: ignore
+            os.startfile(final_dir)
             messagebox.showinfo("Success", f"Images saved to:\n{final_dir}")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to prepare download:\n{e}")
 
     def download_compressed(self):
-        """Create and download compressed ZIP"""
         if not self.processed_images:
             messagebox.showinfo("No Images", "No processed images available.")
             return
@@ -1112,11 +1039,9 @@ class App(tk.Tk):
             package_dir = OUTPUT_ROOT / "package" / timestamp
             package_dir.mkdir(parents=True, exist_ok=True)
             
-            # Copy images to package directory
             for img_path in self.processed_images:
                 shutil.copy2(img_path, package_dir / Path(img_path).name)
             
-            # Compress and create ZIP
             result = comp_pack(
                 [str(package_dir / Path(p).name) for p in self.processed_images],
                 package_dir
@@ -1125,7 +1050,7 @@ class App(tk.Tk):
             zip_path = Path(result["zpath"]) if result.get("zpath") else None
             
             if zip_path and zip_path.exists():
-                os.startfile(zip_path.parent)  # type: ignore
+                os.startfile(zip_path.parent)
                 messagebox.showinfo("Success", f"ZIP file created:\n{zip_path.name}\n\nLocation: {zip_path.parent}")
             else:
                 messagebox.showerror("Error", "Failed to create ZIP file.")

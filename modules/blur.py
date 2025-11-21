@@ -15,7 +15,7 @@ def blur_images(
     plist= [Path(p) for p in ipaths]
     if not plist:
         return []
-    return face_text(
+    return batch_blur(
         plist,
         Path(outdir),
         auto=auto,
