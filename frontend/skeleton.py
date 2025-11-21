@@ -350,6 +350,7 @@ class App(tk.Tk):
             title="Select Images",
             filetypes=[("Images", "*.jpg *.jpeg *.png *.bmp *.tiff *.webp"), ("All files", "*.*")]
         )
+         
         if files:
             self.invalidate_privacy_cache()
             self.selected_files = list(files)
@@ -407,7 +408,7 @@ class App(tk.Tk):
         button_row.pack(fill="x", padx=10, pady=(0, 8))
 
         def create_action_button(parent, label_text, command_cb, *, fill_color="#305669"):
-            canvas_width = max(180, len(label_text) * 10)
+            canvas_width = max(180, len(label_text) * 5)
             btn_canvas = tk.Canvas(
                 parent,
                 width=canvas_width,
@@ -463,7 +464,7 @@ class App(tk.Tk):
         buttons = [
             ("Preview Metadata", self.preview_metadata),
             ("Remove Metadata", self.remove_all_metadata),
-            ("Blur Faces/Plates/Text", self.blur_faces_interactive),
+            ("Blur Faces/Text", self.blur_faces_interactive),
             ("View Privacy Score", self.view_privacy_score),
             ("Rename", self.rename_image),
             ("Done", self.image_done)
